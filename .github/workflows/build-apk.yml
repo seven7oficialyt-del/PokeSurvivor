@@ -1,0 +1,52 @@
+name: Compilar APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Traer el juego (PokéSurvivor)
+        run: |
+          # Si pones el juego en la carpeta "game/" de este repo, se usa esa copia.
+          # Si no, se descarga el repo público JPTER78/pokesurvivor.
+          if [ ! -f game/index.html ]; then
+            git clone --depth 1 https://github.com/JPTER78/pokesurvivor game
+          fi
+          rm -rf app/src/main/assets/game
+          mkdir -p app/src/main/assets/game
+          rsync -a \
+            --exclude='.git' --exclude='.github' --exclude='tests' --exclude='tools' \
+            --exclude='docs' --exclude='infra' --exclude='videos' --exclude='sw.js' \
+            game/ app/src/main/assets/game/
+          test -f app/src/main/assets/game/index.html
+          echo "Archivos del juego: $(find app/src/main/assets/game -type f | wc -l)"
+          du -sh app/src/main/assets/game
+
+      - name: Añadir botón de admin
+        run: |
+          cp admin/admin.js app/src/main/assets/game/admin.js
+          python3 admin/patch_game.py app/src/main/assets/game
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Compilar
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PokeSurvivor-APK
+          path: app/build/outputs/apk/debug/*.apk
